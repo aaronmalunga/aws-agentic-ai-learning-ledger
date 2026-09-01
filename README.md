@@ -393,6 +393,7 @@ Current lessons include:
 deterministic-vs-llm-as-judge.md
 behavioural-invariants-vs-factual-completeness.md
 dataset-card-runner-and-evidence.md
+benchmark-dataset-design-freeze-and-test-discipline.md
 evidence-classes-and-claim-discipline.md
 regression-cases-and-reproduction-statuses.md
 ```
@@ -487,6 +488,42 @@ Evidence
 ```
 
 These artifacts serve different purposes and should remain separate.
+
+## Benchmark Design, Freeze, and Test Discipline
+
+A trustworthy benchmark must be designed and controlled before model
+performance is allowed to influence it.
+
+Key principles include:
+
+```text
+split by semantic family
+→ prevent paraphrase leakage
+
+validate structure
+→ enforce deterministic dataset rules
+
+audit lexical and statistical characteristics
+→ identify suspicious patterns
+
+perform human semantic review
+→ confirm labels and boundaries
+
+freeze before model training
+→ preserve experimental independence
+
+use train and validation for selection
+→ protect the held-out test set
+
+treat post-freeze model failures as evidence
+→ do not rewrite tests to improve scores
+```
+
+The detailed lesson is:
+
+```text
+concepts/evaluation/benchmark-dataset-design-freeze-and-test-discipline.md
+```
 
 ---
 
