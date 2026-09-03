@@ -2423,3 +2423,361 @@ This is the behaviour we ultimately want to validate.
 ## Interview Explanation
 
 > I treat idempotency as an operation-level contract rather than simply generating unique request IDs. For a Reliora ticket-creation workflow, the application creates one stable operation ID for the customer's logical submission and reuses it across retries. The backend atomically records that operation, performs the side effect once, and stores the resulting ticket ID. If a timeout causes the caller to retry after the original write succeeded, the backend recognizes the same operation and returns the original result instead of creating a duplicate ticket. I would verify this with duplicate, concurrent, and timeout-after-commit test cases rather than treating the presence of an idempotency key as proof that retry safety works.
+
+
+---
+
+# Implementation Update - Durable DynamoDB Idempotency
+
+**Date:** 2026-09-03
+
+**Reliora commit:** `24d544a - feat: establish durable AWS ticket execution foundation`
+
+The earlier sections describe the idempotency behaviour Reliora requires.
+
+That behaviour is now partially implemented for AWS through a DynamoDB-backed execution adapter.
+
+## Local Reference Behaviour
+
+The original local implementation established the required semantics using:
+
+```text
+InMemoryIdempotencyRegistry
+InMemoryTicketResultStore
+TicketProvider
+```
+
+The execution sequence was conceptually:
+
+```text
+check operation
+-> execute provider
+-> save authoritative result
+```
+
+This was useful for establishing and testing application behaviour.
+
+However, correctness inside one Python process does not automatically provide distributed correctness.
+
+## Why the Local Sequence Was Not Enough for AWS
+
+In a distributed environment, a sequence such as:
+
+```text
+check
+-> create
+-> save
+```
+
+contains failure windows.
+
+For example:
+
+```text
+worker A checks operation X
+worker B checks operation X
+both observe X as absent
+both attempt the side effect
+```
+
+A process could also fail between individual persistence operations.
+
+Therefore the AWS implementation could not simply replace the in-memory dictionaries with independent DynamoDB calls.
+
+The behavioural contract had to remain the same while the persistence mechanics changed.
+
+## Durable AWS Execution Boundary
+
+Reliora now has:
+
+```text
+TicketExecutionPort
+        |
+        +-> local TicketExecutionCoordinator
+        |
+        +-> DynamoDBTicketExecutionCoordinator
+```
+
+The application service depends on the execution capability rather than on one persistence implementation.
+
+The DynamoDB implementation stores two distinct forms of state:
+
+```text
+operations table
+-> logical operation identity
+-> request fingerprint
+-> authoritative ticket reference
+
+tickets table
+-> authoritative ticket business record
+```
+
+This keeps retry-control state distinct from ticket business state.
+
+## Atomic New-Operation Creation
+
+For a new operation, the AWS adapter uses DynamoDB `TransactWriteItems`.
+
+Conceptually:
+
+```text
+operation_id = O1
+fingerprint = F1
+ticket_id = T1
+
+TransactWriteItems
+    |
+    +-> Put operation O1
+    |      condition:
+    |      attribute_not_exists(operation_id)
+    |
+    +-> Put ticket T1
+           condition:
+           attribute_not_exists(ticket_id)
+```
+
+The transaction provides an important property:
+
+```text
+both records commit
+or
+neither record commits
+```
+
+The operation condition also acts as the distributed concurrency boundary.
+
+Only one concurrent request can successfully claim a previously unused logical `operation_id`.
+
+## Matching Retry
+
+If durable state already contains:
+
+```text
+operation_id = O1
+fingerprint = F1
+ticket_id = T1
+```
+
+and a retry arrives with:
+
+```text
+operation_id = O1
+fingerprint = F1
+```
+
+Reliora returns:
+
+```text
+REPLAYED
+ticket_id = T1
+```
+
+No second ticket write is attempted.
+
+## Conflicting Retry
+
+If the same logical operation identity is reused with changed business data:
+
+```text
+stored:
+O1 + F1
+
+incoming:
+O1 + F2
+```
+
+and:
+
+```text
+F1 != F2
+```
+
+Reliora returns:
+
+```text
+CONFLICT
+```
+
+and does not create another ticket.
+
+This prevents one idempotency identity from silently being reused for a different business action.
+
+## Concurrent Race Reconciliation
+
+Two workers can both initially observe that an operation does not exist.
+
+For example:
+
+```text
+worker A             worker B
+   |                    |
+read O1 absent       read O1 absent
+   |                    |
+transaction A        transaction B
+   |                    |
+succeeds             condition loses
+   |                    |
+O1 + T1 committed    reread O1
+```
+
+The losing worker does not blindly retry the side effect.
+
+It reconciles against authoritative DynamoDB state.
+
+If the stored fingerprint matches:
+
+```text
+REPLAYED
+```
+
+If it differs:
+
+```text
+CONFLICT
+```
+
+If authoritative state still cannot be established:
+
+```text
+UNCONFIRMED
+```
+
+## Why Strongly Consistent Reads Are Used
+
+The reconciliation read uses:
+
+```text
+ConsistentRead=True
+```
+
+At the idempotency boundary, immediate knowledge of current authoritative operation state is more important than optimizing a small read-cost difference.
+
+This is a targeted consistency decision rather than a claim that every DynamoDB read in Reliora requires strong consistency.
+
+## Ambiguous Outcomes Stay Explicit
+
+A cancelled or ambiguous transaction does not automatically mean:
+
+```text
+ticket creation failed
+```
+
+and it does not mean:
+
+```text
+ticket creation succeeded
+```
+
+Reliora rereads authoritative operation state.
+
+If no trustworthy result can be reconstructed, the execution result is:
+
+```text
+UNCONFIRMED
+```
+
+This preserves the existing rule:
+
+> Do not guess when backend truth is unavailable.
+
+## Deterministic AWS Adapter Tests
+
+The AWS adapter is tested without requiring live AWS.
+
+A fake DynamoDB client records and controls:
+
+```text
+GetItem
+TransactWriteItems
+AWS transaction errors
+authoritative read responses
+```
+
+The clock and ticket ID generator are also injectable.
+
+Seven tests currently verify:
+
+```text
+new operation creates both records atomically
+matching retry replays without another transaction
+conflicting retry is rejected without a write
+matching concurrency race reconciles to replay
+conflicting concurrency race reconciles to conflict
+ambiguous cancelled transaction returns UNCONFIRMED
+incomplete durable state returns UNCONFIRMED
+```
+
+The AWS-adapter test result was:
+
+```text
+7 passed
+```
+
+## Behavioural Regression Evidence
+
+Before introducing the cloud execution abstraction, the core reliability contract produced:
+
+```text
+23 passed
+```
+
+After introducing `TicketExecutionPort`, the same contract suite again produced:
+
+```text
+23 passed
+```
+
+After adding the DynamoDB adapter and its seven tests, the complete Reliora suite produced:
+
+```text
+171 passed
+```
+
+using:
+
+```powershell
+uv run python -m pytest
+```
+
+This supports the claim that the distributed execution implementation was introduced without breaking behaviours represented by the existing test suite.
+
+## What This Evidence Does Not Yet Prove
+
+The current evidence does not yet prove:
+
+```text
+live DynamoDB behaviour
+real Lambda concurrency
+IAM correctness
+AgentCore Gateway integration
+network failure behaviour in AWS
+production-scale concurrency
+```
+
+Those require live cloud verification.
+
+The implementation should therefore be described as:
+
+```text
+locally tested distributed-state design
+```
+
+not:
+
+```text
+production-proven exactly-once system
+```
+
+## Updated Engineering Lesson
+
+The most important lesson from this implementation is:
+
+> Idempotency is not provided merely by having an idempotency key. The storage and execution boundary must enforce the logical operation identity safely under retries, concurrency, partial failure, and ambiguous outcomes.
+
+The local implementation established the semantics.
+
+The DynamoDB implementation introduced the distributed mechanics required to preserve those semantics across independent workers.
+
+## Updated Interview Explanation
+
+> I first implemented Reliora's ticket idempotency semantics locally so I could define and test what new, matching, conflicting, and unconfirmed operations meant. When moving to AWS, I did not simply replace the in-memory dictionaries with DynamoDB calls because the local check-create-save sequence was not atomic under concurrency. I introduced an execution port and a DynamoDB-backed implementation that uses conditional transactional writes to atomically claim the logical operation and create the ticket record. If another invocation loses the race, it performs a strongly consistent reconciliation read and returns replay, conflict, or unconfirmed based on authoritative state. I tested seven AWS-specific reliability cases locally and then ran the full 171-test regression suite. Live AWS integration is still a separate evidence gate, so I do not treat the local tests as proof of production concurrency behaviour.
