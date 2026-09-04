@@ -3,7 +3,7 @@
 **Document type:** Cross-project engineering standard
 **Applies to:** Reliora and all subsequent portfolio products
 **Status:** Governing baseline
-**Version:** 1.1
+**Version:** 1.2
 **Established:** 2026-09-03
 
 ---
@@ -258,6 +258,97 @@ Before adding a technology, answer:
 8. Would a real engineering team plausibly adopt it here?
 
 If the answers are weak, the tool remains out of scope.
+
+
+
+## 6.1 Pre-Implementation Architecture Gate
+
+The Tool Admission Rule must be applied before a material architecture or
+dependency change is implemented.
+
+This applies to new:
+
+- frameworks;
+- cloud services;
+- agent runtimes;
+- databases;
+- orchestration layers;
+- model architectures;
+- major libraries;
+- infrastructure components;
+- cross-cutting architecture patterns.
+
+Before implementation:
+
+1. identify the requirement, risk, observed problem, or measured limitation;
+2. identify the authoritative product architecture and relevant source
+   precedence;
+3. determine whether the existing architecture can satisfy the requirement;
+4. classify the proposed mechanism;
+5. resolve important unknowns through the smallest useful experiment;
+6. record material architecture decisions before dependency or infrastructure
+   adoption.
+
+Use the following recommendation states:
+
+- `REQUIRED BY SOURCE` — explicitly required by an authoritative product source;
+- `ACCEPTED BASELINE` — already part of the accepted architecture;
+- `PROPOSED` — architecture decision under formal consideration;
+- `EXPERIMENTAL CANDIDATE` — plausible mechanism requiring evidence;
+- `VERIFIED` — demonstrated within the stated scope.
+
+The decision rule is:
+
+```text
+Can the existing accepted architecture satisfy the requirement?
+
+YES
+→ use the existing architecture.
+
+UNKNOWN
+→ run the smallest experiment that removes the uncertainty.
+
+NO, supported by evidence
+→ compare alternatives
+→ document trade-offs
+→ select the change
+→ implement.
+```
+
+The governing principle is:
+
+> **UNKNOWN is an experiment state, not permission to introduce a plausible
+> technology.**
+
+A technically attractive candidate must not silently become the architecture.
+
+```text
+candidate mechanism
+!= architecture decision
+!= implemented architecture
+!= verified architecture
+```
+
+Before introducing another technology, also ask whether it increases the
+number of unverified layers in the next experiment.
+
+Prefer:
+
+```text
+prove layer N
+→ introduce layer N+1
+```
+
+over introducing several unverified components simultaneously.
+
+This gate reduces:
+
+- architecture drift;
+- source-precedence violations;
+- unnecessary dependencies;
+- technology collection;
+- premature framework commitment;
+- multi-variable integration failures that are difficult to diagnose.
 
 ---
 
