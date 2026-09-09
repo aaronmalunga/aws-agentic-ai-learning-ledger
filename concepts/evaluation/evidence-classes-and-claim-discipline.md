@@ -2186,3 +2186,53 @@ The project gains a real engineering story.
 ## Interview Explanation
 
 > I use an explicit evidence taxonomy in Reliora so architecture intentions, historical observations, experimental results, measured values, and synthetic assumptions are not mixed together. For example, the Stage-1 defects are historical `OBSERVED` evidence, while the deterministic replay result is `EXPERIMENTAL`: 3 of 3 executable known defects in the versioned reproduction dataset were detected with zero mismatches. I do not translate that into a claim of universal reliability. Targets such as routing F1 or zero duplicate side effects remain targets until they are evaluated, and future latency or cost figures will be labeled measured only when the environment and method are defined. This keeps technical, portfolio, and interview claims aligned with what the evidence actually demonstrates.
+
+---
+
+# 97. Evidence Class vs Evidence Maturity
+
+Reliora now distinguishes two separate properties of evidence.
+
+**Evidence class** answers:
+
+> What kind of evidence is this?
+
+Examples include `OBSERVED`, `EXPERIMENTAL`, `MEASURED`, `TARGET`, `SYNTHETIC`, and `BLOCKED`.
+
+**Evidence maturity** answers:
+
+> How close is this evidence to the intended real operating environment?
+
+The working maturity ladder is:
+
+```text
+E0 — Design / target
+E1 — Unit verified
+E2 — Local integration verified
+E3 — Local synthetic measured
+E4 — Cloud / target-environment integration verified
+E5 — Controlled target-environment experiment
+E6 — End-to-end deployed verified
+E7 — Real beta observed
+E8 — Real production observed
+E9 — Independent assurance
+```
+
+These dimensions must not be collapsed.
+
+For Reliora's local ticket-runtime benchmark:
+
+- Evidence class: `EXPERIMENTAL`
+- Evidence maturity: `E3 — Local Synthetic Measured`
+
+That is legitimate project evidence, but it does not establish AWS or production capacity.
+
+Likewise, Terraform validation can be locally verified while live AWS planning remains blocked.
+
+## Engineering Rule
+
+The evidence must match both the claim and the environment in which it was produced.
+
+A strong E3 result must not silently become an E6 production claim.
+
+The boundary of the experiment is part of the evidence.

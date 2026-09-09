@@ -580,3 +580,33 @@ These layers cooperate but should not be collapsed into one concern.
 ## Interview Explanation
 
 > I separate AWS provisioning from runtime service interaction. Terraform defines what infrastructure should exist, such as Reliora's DynamoDB tables and later Lambda and IAM resources. Boto3 is used by the running Python application to call AWS APIs such as DynamoDB `GetItem` and `TransactWriteItems`, while Botocore provides much of the lower-level request, signing, service-model, and error machinery underneath Boto3. I keep those SDK calls inside AWS adapters so application-level reliability rules remain independent of the API mechanics. I also test the adapter with deterministic fake clients locally, then treat Terraform deployment, IAM, and live AWS behaviour as separate integration evidence gates.
+
+---
+
+# 21. Local Terraform Verification vs Target AWS Verification
+
+A later Reliora checkpoint clarified that local Terraform validity and live AWS verification are separate evidence gates.
+
+Locally, `terraform fmt`, `terraform init`, and `terraform validate` completed successfully. The Reliora software quality gates were also healthy: 200 pytest tests passed, Ruff passed, and mypy reported no issues across 30 source files.
+
+The next stage, `terraform plan`, requires interaction with the configured AWS target environment. That stage could not be completed because no active AWS account was currently available.
+
+The correct engineering state was therefore:
+
+- Terraform configuration: **VERIFIED LOCALLY**
+- Terraform initialization: **VERIFIED LOCALLY**
+- Terraform validation: **VERIFIED LOCALLY**
+- AWS target-environment plan: **BLOCKED**
+- AWS deployment: **NOT VERIFIED**
+- Deployed IAM behaviour: **NOT VERIFIED**
+- Live Lambda and DynamoDB behaviour: **NOT VERIFIED**
+
+This was not evidence that the Terraform configuration was broken. It was evidence that the next environment-dependent verification stage was unavailable.
+
+## Engineering Lesson
+
+Different Terraform stages answer different questions. Formatting checks consistency. Initialization prepares providers and backend dependencies. Validation checks local configuration structure and provider-schema compatibility. Planning compares the configuration with a real target environment. Applying changes real infrastructure.
+
+A successful local validation must not be presented as evidence of successful AWS deployment. Conversely, a blocked cloud verification stage must not erase valid local evidence.
+
+> Preserve the strongest evidence actually obtained, and mark the next unavailable verification stage as blocked rather than treating the whole implementation as either complete or failed.

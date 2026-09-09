@@ -75,7 +75,8 @@ No narrative should claim production scale, commercial adoption, SLA performance
 | `INT-042` | CI/CD should enforce evidence, not only deployment | `PLANNED` | The intended release path will use deterministic regression and evaluation gates before cloud deployment rather than treating successful deployment as sufficient release evidence. |
 | `INT-043` | Portability comes from boundaries, not fake cloud neutrality | `EVIDENCE-BACKED` | Reliora is intentionally AWS-first, while application contracts remain outside AWS adapters so future provider or infrastructure substitutions occur through defined boundaries rather than rewrites. |
 | `INT-044` | Security is operational architecture | `PARTIAL` | Temporary AWS authentication, MFA, absence of long-lived access keys, least-privilege runtime roles, and future GitHub OIDC form one security architecture rather than isolated configuration tasks. |
-| `INT-045` | FinOps begins before deployment | `EVIDENCE-BACKED` | AWS budget guardrails were established before meaningful cloud deployment, while performance and unit-cost claims remain deferred until measured. |
+| `INT-045` | FinOps begins before deployment | `EVIDENCE-BACKED` | AWS budget guardrails were established before meaningful cloud deployment. Local performance has now been measured, while cloud performance and unit-cost claims remain deferred until target-environment measurement. |
+| `INT-046` | Measurement boundary defines claim boundary | `EVIDENCE-BACKED` | A 100,000-request local synthetic ticket-runtime benchmark measured approximately 6.9k–11.0k requests per second across the tested concurrency levels with zero observed failures. AWS services, networking, AgentCore, Gateway, DynamoDB, throttling, and cloud scaling were excluded, so the result is treated as E3 local synthetic measured evidence rather than production-capacity evidence. |
 
 ---
 
@@ -157,6 +158,26 @@ Observed sequence:
 4. `uv run python -m pytest -q` successfully executed all 171 tests.
 
 The engineering lesson is to classify the failure boundary correctly before modifying application code.
+
+## Local Performance Evidence
+
+The local ticket-runtime benchmark provides evidence for:
+
+- `INT-040`
+- `INT-045`
+- `INT-046`
+
+Observed experiment scope:
+
+- 100,000 synthetic local in-process requests;
+- requested concurrency levels of 1, 2, 4, and 8;
+- zero observed request failures;
+- approximately 6.9k–11.0k requests per second across the tested levels;
+- handler latency measured separately from executor queue wait.
+
+The experiment explicitly excluded AWS Lambda infrastructure, Lambda cold starts, AgentCore, Gateway, DynamoDB service and network latency, AWS throttling, cloud cost, and external networking.
+
+The evidence therefore establishes a reproducible local runtime baseline. It does not establish deployed AWS capacity or production scalability.
 
 ---
 
@@ -302,6 +323,7 @@ The first narratives that should eventually receive full interview answers are:
 13. `INT-036` — Full regression gate.
 14. `INT-037` — Collection failure versus test failure.
 15. `INT-039` — Transport identity versus business-operation identity.
+16. `INT-046` — Measurement boundary defines claim boundary.
 
 ---
 
